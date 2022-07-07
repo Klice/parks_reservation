@@ -1,9 +1,12 @@
 import json
+import logging
 import requests
 import urllib.parse
 
 from datetime import timedelta, datetime, date
 from enum import IntEnum
+
+logger = logging.getLogger(__name__)
 
 
 class Availability(IntEnum):
@@ -33,6 +36,7 @@ exclude_parks = [
     -2147483572,
 ]
 
+# include_parks = []
 
 include_parks = [
     -2147483408,  # Long Point
@@ -59,7 +63,7 @@ class OntarioReservations():
         if headers is None:
             headers = {}
         default_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0",
         }
         default_headers.update(headers)
 
@@ -121,7 +125,7 @@ class OntarioReservations():
         holidays = cls._get_holidays()
         start_date = cls._next_weekday(date.today(), 4)
         result = []
-        for i in range(5):
+        for i in range(2):
             result.append((
                 start_date + timedelta(weeks=i),
                 start_date + timedelta(weeks=i) + timedelta(days=2),
@@ -170,7 +174,6 @@ class OntarioReservations():
                 "end_date": end_date.isoformat(),
                 "parks": []
             }
-            print(weekend)
             parks = self._get_park_availabilities(
                 start_date,
                 end_date,
@@ -178,13 +181,16 @@ class OntarioReservations():
             )
             for park_id in [p for p in parks if self._is_park_include(p)]:
                 park_to_add = {
-                    "name": self.ROOT_MAPS[park_id], "campgrounds": []}
+                    "name": self.ROOT_MAPS[park_id],
+                    "campgrounds": []
+                }
                 campgrounds = self._get_park_availabilities(
                     start_date, end_date, park_id)
                 for c in campgrounds:
                     park_to_add["campgrounds"].append(
                         self._get_campground(c, start_date, end_date))
                 weekend["parks"].append(park_to_add)
+            logger.info(weekend)
             result.append(weekend)
         return result
 
