@@ -1,3 +1,4 @@
+import json
 import requests
 import urllib.parse
 
@@ -5,11 +6,25 @@ from datetime import timedelta, datetime, date
 from enum import IntEnum
 
 
-class Availabiolity(IntEnum):
+class Availability(IntEnum):
     AVAILABLE = 0
     UNAVAILABLE = 1
     RESTRICTIONS = 6
     PARTIAL_AVAILABILITY = 7
+
+
+EQUIPMENT_ID = -32768
+PARTY_SIZE = 3
+
+
+class SubEquipment(IntEnum):
+    SINGLE_TENT = -32768
+    TWO_TENTS = -32767
+    THREE_TENTS = -32766
+    RV_TO_18FT = -32765
+    RV_TO_25FT = -32764
+    RV_TO_32FT = -32763
+    RV_OVER_32FT = -32762
 
 
 exclude_parks = [
@@ -18,9 +33,10 @@ exclude_parks = [
     -2147483572,
 ]
 
+
 include_parks = [
-    -2147483408,
-    -2147483334
+    -2147483408,  # Long Point
+    -2147483334   # Pinary
 ]
 
 
@@ -61,12 +77,17 @@ class OntarioReservations():
             "endDate": date(end_date.year, end_date.month, end_date.day).isoformat(),
             "isReserving": True,
             "getDailyAvailability": False,
-            "partySize": 3,
-            "equipmentCategoryId": -32768,
-            "subEquipmentCategoryId": -32768,
+            "partySize": PARTY_SIZE,
+            "equipmentCategoryId": EQUIPMENT_ID,
+            "subEquipmentCategoryId": SubEquipment.SINGLE_TENT.value,
             "generateBreadcrumbs": False,
             "resourceAccessPointId": None,
-            "filterData": "[{\"attributeDefinitionId\":-32736,\"enumValues\":[1],\"attributeDefinitionDecimalValue\":0,\"filterStrategy\":1},{\"attributeDefinitionId\":-32726,\"enumValues\":[1],\"attributeDefinitionDecimalValue\":0,\"filterStrategy\":1}]"
+            "filterData": json.dumps([{
+                "attributeDefinitionId": -32736,
+                "enumValues": [1],
+                "attributeDefinitionDecimalValue": 0,
+                "filterStrategy": 1
+            }])
         }
         return cls._make_get_request('availability/map', data, headers)
 
@@ -74,11 +95,6 @@ class OntarioReservations():
     def _get_root_maps(cls):
         ret = cls._make_get_request('resourcelocation/rootmaps')
         return {str(r["mapId"]): r["resourceLocationLocalizedValues"]["en-CA"] for r in ret}
-
-    @classmethod
-    def _get_res_cat(cls):
-        ret = cls._make_get_request('resourcecategory')
-        return {str(r["resourceLocationId"]): r["resourceLocationLocalizedValues"]["en-CA"] for r in ret}
 
     @staticmethod
     def _next_weekday(d, weekday):
@@ -116,19 +132,6 @@ class OntarioReservations():
                 ))
         return result
 
-    @classmethod
-    def _get_res_loc(cls):
-        ret = cls._make_get_request('resourceLocation')
-        results = {}
-        for r in ret:
-            short_name = ""
-            for l in r["localizedValues"]:
-                if l["cultureName"] == "en-CA":
-                    short_name = l["shortName"]
-            results[str(r["resourceLocationId"])] = short_name
-
-        return results
-
     def _get_from_map(self, mid):
         mid = int(mid)
         for m in self.MAPS_DATA:
@@ -140,14 +143,6 @@ class OntarioReservations():
         return cls._make_get_request('maps')
 
     @staticmethod
-    def _get_res_name(rid, data):
-        for d in data:
-            if rid in d:
-                return d[str(rid)]
-        print("Not found:" + rid)
-        return "Unknown"
-
-    @staticmethod
     def _build_url(pid, cid, start_date, end_date):
         url = "https://reservations.ontarioparks.com/create-booking/results?"
         data = {
@@ -156,11 +151,11 @@ class OntarioReservations():
             "bookingCategoryId": 0,
             "startDate": start_date.isoformat(),
             "endDate": end_date.isoformat(),
-            "nights": 3,
+            "nights": (end_date - start_date).days,
             "isReserving": True,
-            "equipmentId": -32768,
-            "subEquipmentId": -32768,
-            "partySize": 3,
+            "equipmentId": EQUIPMENT_ID,
+            "subEquipmentId": SubEquipment.SINGLE_TENT.value,
+            "partySize": PARTY_SIZE,
             "searchTime": datetime.now().isoformat() + ".000",
             "resourceLocationId": int(cid),
         }
@@ -189,8 +184,8 @@ class OntarioReservations():
         return result
 
     @staticmethod
-    def _is_park_include(park_id):
-        return not ((int(park_id) in exclude_parks) or (include_parks and int(park_id) not in include_parks))
+    def _is_park_include(park_id: int) -> bool:
+        return (park_id not in exclude_parks) and (not include_parks or park_id in include_parks)
 
     def _get_campground(self, camp_id, start_date, end_date):
         campground = {
@@ -209,4 +204,8 @@ class OntarioReservations():
         return campground
 
     def _get_park_availabilities(self, start_date, end_date, park_id, res_type="mapLinkAvailabilities"):
-        return [r for r, aval in self._get_map_new(start_date, end_date, park_id)[res_type].items() if aval[0] == Availabiolity.AVAILABLE]
+        res = []
+        for r, avail in self._get_map_new(start_date, end_date, park_id)[res_type].items():
+            if avail[0] == Availability.AVAILABLE:
+                res.append(r)
+        return res
