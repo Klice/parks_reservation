@@ -59,7 +59,8 @@ class OntarioReservations():
         if headers is None:
             headers = {}
         default_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0"}
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0"
+        }
         default_headers.update(headers)
 
         ret = requests.get(f"{cls.api_url}/{endpoint}",
@@ -170,7 +171,11 @@ class OntarioReservations():
                 "parks": []
             }
             print(weekend)
-            parks = self._get_park_availabilities(start_date, end_date, -2147483461)
+            parks = self._get_park_availabilities(
+                start_date,
+                end_date,
+                -2147483461  # Ontario South
+            )
             for park_id in [p for p in parks if self._is_park_include(p)]:
                 park_to_add = {
                     "name": self.ROOT_MAPS[park_id], "campgrounds": []}
