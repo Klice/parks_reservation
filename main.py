@@ -48,5 +48,9 @@ if __name__ == "__main__":
         api.run(host="0.0.0.0", port=8111)
     if args.mode == "standalone":
         while True:
-            send_notification(park.get_avail())
+            try:
+                send_notification(park.get_avail())
+            except Exception as e:
+                send_notification("❌ Oops!", e.__class__, "occurred.")
+                break
             time.sleep(60)
