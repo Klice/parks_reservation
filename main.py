@@ -51,6 +51,6 @@ if __name__ == "__main__":
             try:
                 send_notification(park.get_avail())
             except Exception as e:
-                send_notification("❌ Oops!", e.__class__, "occurred.")
+                send_notification(f"❌ Oops! {e.__class__} occurred.")
                 break
             time.sleep(60)

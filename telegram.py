@@ -12,7 +12,7 @@ class TelegramNotifications:
             msg = msg[0:4096]
         headers = {
             "Accept": "application/json",
-            "User-Agent": "Telegram Bot SDK - (https://github.com/irazasyed/telegram-bot-sdk)",
+            "User-Agent": "Ontario Parks Reservation Telegram Bot (https://github.com/Klice/parks_reservation)",
             "Content-Type": "application/json"
         }
         response = requests.post(
