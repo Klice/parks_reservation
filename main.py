@@ -14,15 +14,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-park = OntarioReservations()
-api = Flask(__name__)
-
-
-@api.route('/', methods=['GET'])
-def get_available_parks():
-    res = park.get_avail()
-    return make_response(jsonify(res), 200)
-
 
 def send_notification(results):
     msg = ""
@@ -42,15 +33,24 @@ def send_notification(results):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['api', 'standalone'], required=True)
+    parser.add_argument('--weeks', type=int, default=2)
     args = parser.parse_args()
+    park = OntarioReservations(args.weeks)
     if args.mode == "api":
+        api = Flask(__name__)
         CORS(api)
+
+        @api.route('/', methods=['GET'])
+        def get_available_parks():
+            res = park.get_avail()
+            return make_response(jsonify(res), 200)
+
         api.run(host="0.0.0.0", port=8111)
     if args.mode == "standalone":
         while True:
             try:
                 send_notification(park.get_avail())
             except Exception as e:
-                send_notification(f"❌ Oops! {e.__class__} occurred.")
+                TelegramNotifications.send_notification(f"❌ Oops! {e.__class__} occurred: {e}")
                 break
             time.sleep(60)
