@@ -1,10 +1,15 @@
+from dataclasses import dataclass
 import json
 import logging
+from typing import List
 import requests
 import urllib.parse
 
 from datetime import timedelta, datetime, date
 from enum import IntEnum
+
+from models.root_maps import RootMap
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +45,30 @@ exclude_parks = [
 
 include_parks = [
     -2147483408,  # Long Point
-    -2147483334   # Pinary
+    # -2147483334,  # Pinary
+    # -2147483458,  # Inverhuron
 ]
+
+
+@dataclass
+class ReservationCampground:
+    name: str
+    url: str
+    key: str
+    spots: List[int]
+
+
+@dataclass
+class ReservationPark:
+    name: str
+    campgrounds: List[ReservationCampground]
+
+
+@dataclass
+class ReservationWeekend:
+    start_date: datetime
+    end_date: datetime
+    parks: List[ReservationPark]
 
 
 class OntarioReservations:
@@ -51,14 +78,17 @@ class OntarioReservations:
     ROOT_MAPS = None
     WEEKENDS = None
 
-    def __init__(self, weeks):
+    def __init__(self, weeks, start_weekday=4, nights=2, use_holidays=True, weeks_from_now=0):
         self.weeks = weeks
         self.MAPS_DATA = self._get_maps()
         self.ROOT_MAPS = self._get_root_maps()
-        self.WEEKENDS = self._get_weekends()
+        self.WEEKENDS = self._get_weekends(
+            start_weekday, nights, use_holidays, weeks_from_now)
 
-        logger.info(f"Include parks: {[self._get_from_map(p) for p in include_parks]}")
-        logger.info(f"Exclude parks: {[self._get_from_map(p) for p in exclude_parks]}")
+        logger.info(
+            f"Include parks: {[self._get_from_map(p) for p in include_parks]}")
+        logger.info(
+            f"Exclude parks: {[self._get_from_map(p) for p in exclude_parks]}")
 
     @classmethod
     def _make_get_request(cls, endpoint, params=None, headers=None):
@@ -102,8 +132,9 @@ class OntarioReservations:
 
     @classmethod
     def _get_root_maps(cls):
-        ret = cls._make_get_request('resourcelocation/rootmaps')
-        return {str(r["mapId"]): r["resourceLocationLocalizedValues"]["en-CA"] for r in ret}
+        ret = RootMap.schema().load(cls._make_get_request(
+            'resourcelocation/rootmaps'), many=True)
+        return {r.map_id: r.resource_location_localized_values.en_CA for r in ret}
 
     @staticmethod
     def _next_weekday(d, weekday):
@@ -124,19 +155,21 @@ class OntarioReservations:
                     result.append(datetime.fromisoformat(h["observedDate"]))
         return result
 
-    def _get_weekends(self):
-        holidays = self._get_holidays()
-        start_date = self._next_weekday(date.today(), 4)
+    def _get_weekends(self, start_weekday, nights, use_holidays, weeks_from_now):
+        holidays = []
+        if use_holidays:
+            holidays = self._get_holidays()
+        start_date = self._next_weekday(date.today(), start_weekday)
         result = []
-        for i in range(self.weeks):
+        for i in range(weeks_from_now, self.weeks+weeks_from_now):
             result.append((
                 start_date + timedelta(weeks=i),
-                start_date + timedelta(weeks=i) + timedelta(days=2),
+                start_date + timedelta(weeks=i) + timedelta(days=nights),
             ))
-            if start_date + timedelta(weeks=i) + timedelta(days=3) in holidays:
+            if start_date + timedelta(weeks=i) + timedelta(days=nights+1) in holidays:
                 result.append((
                     start_date + timedelta(weeks=i) + timedelta(days=1),
-                    start_date + timedelta(weeks=i) + timedelta(days=3),
+                    start_date + timedelta(weeks=i) + timedelta(days=nights+1),
                 ))
         return result
 
@@ -169,47 +202,49 @@ class OntarioReservations:
         }
         return url + urllib.parse.urlencode(data)
 
-    def get_avail(self):
+    def get_avail(self) -> List[ReservationWeekend]:
         result = []
         for start_date, end_date in self.WEEKENDS:
-            weekend = {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "parks": self._get_avail_park_for_dates(start_date, end_date)
-            }
+            weekend = ReservationWeekend(
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
+                parks=self._get_avail_park_for_dates(start_date, end_date)
+            )
             logger.info(weekend)
             result.append(weekend)
         return result
 
-    def _get_avail_park_for_dates(self, start_date, end_date):
+    def _get_avail_park_for_dates(self, start_date, end_date) -> List[ReservationPark]:
         res = []
-        parks = self._get_park_availabilities(start_date, end_date, -2147483461)
-        logger.info(f"Available parks on {start_date}: {[self._get_from_map(p) for p in parks]}")
-        for park_id in [p for p in parks if self._is_park_include(p)]:
-            park_to_add = {
-                "name": self.ROOT_MAPS[park_id],
-                "campgrounds": self._get_avail_campgrounds_for_dates_and_park(start_date, end_date, park_id)
-            }
+        parks = self._get_park_availabilities(
+            start_date, end_date, -2147483461)
+        logger.info(
+            f"Available parks on {start_date}: {[self._get_from_map(p) for p in parks]}")
+        for park_id in [p for p in parks if self._is_park_include(int(p))]:
+            park_to_add = ReservationPark(
+                name=self._get_from_map(park_id),
+                campgrounds=self._get_avail_campgrounds_for_dates_and_park(
+                    start_date, end_date, park_id)
+            )
             res.append(park_to_add)
         return res
 
-    def _get_avail_campgrounds_for_dates_and_park(self, start_date, end_date, park_id):
-        res = []
-        campgrounds = self._get_park_availabilities(start_date, end_date, park_id)
-        for c in campgrounds:
-            res.append(self._get_campground(c, start_date, end_date))
-        return res
+    def _get_avail_campgrounds_for_dates_and_park(self, start_date, end_date, park_id) -> List[ReservationCampground]:
+        campgrounds = self._get_park_availabilities(
+            start_date, end_date, park_id)
+        return [self._get_campground(c, start_date, end_date) for c in campgrounds]
 
     @staticmethod
     def _is_park_include(park_id: int) -> bool:
         return (park_id not in exclude_parks) and (not include_parks or park_id in include_parks)
 
-    def _get_campground(self, camp_id, start_date, end_date):
-        campground = {
-            "name": self._get_from_map(camp_id),
-            "url": self._build_url(camp_id, camp_id, start_date, end_date),
-            "spots": []
-        }
+    def _get_campground(self, camp_id, start_date, end_date) -> ReservationCampground:
+        campground = ReservationCampground(
+            name=self._get_from_map(camp_id),
+            url=self._build_url(camp_id, camp_id, start_date, end_date),
+            key='-'.join([str(start_date), str(end_date), camp_id]),
+            spots=[]
+        )
         spots_map = self._get_park_availabilities(
             start_date,
             end_date,

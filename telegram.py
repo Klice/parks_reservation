@@ -1,7 +1,9 @@
 import requests
 
+from interfaces import NotificationService
 
-class TelegramNotifications:
+
+class TelegramNotifications(NotificationService):
     bot_token = ''
     bot_chatID = ''
     api_url = 'https://api.telegram.org/bot'
