@@ -98,9 +98,10 @@ class OntarioReservations:
             headers = {}
         default_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:102.0) Gecko/20100101 Firefox/102.0",
+            "Accept-Language": "en-US,en;q=0.5",
         }
         default_headers.update(headers)
-
+        logger.debug(default_headers)
         ret = requests.get(f"{cls.api_url}/{endpoint}",
                            params=params, headers=default_headers)
         ret.raise_for_status()
